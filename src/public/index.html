@@ -35,7 +35,7 @@
   <div class="container">
     <h1>ASMR Downloader</h1>
     <div class="form-row">
-      <input type="text" id="workId" placeholder="Work ID (e.g. RJ01420480 or 01420480)" />
+      <input type="text" id="workId" placeholder="Work IDs (e.g. RJ01420480, 01420481)" />
       <button id="btn" onclick="startDownload()">Download</button>
     </div>
     <div id="status" class="status"></div>
@@ -45,31 +45,59 @@
   </div>
 
   <script>
-    let es = null;
+    const queue = [];
+    let running = false;
+
+    function normalizeId(raw) {
+      const num = raw.replace(/^RJ/i, '');
+      return 'RJ' + num;
+    }
 
     function startDownload() {
-      const id = document.getElementById('workId').value.trim();
-      if (!id) { return; }
+      const raw = document.getElementById('workId').value.trim();
+      if (!raw) { return; }
 
-      const btn = document.getElementById('btn');
+      const ids = raw.split(',').map(s => s.trim()).filter(Boolean);
+      if (!ids.length) { return; }
+
+      document.getElementById('workId').value = '';
+      ids.forEach(id => {
+        queue.push(normalizeId(id));
+      });
+      addLog('info', `Queued: ${ids.map(normalizeId).join(', ')} (${queue.length} in queue)`);
+      processQueue();
+    }
+
+    function addLog(cls, text) {
+      const log = document.getElementById('log');
+      log.style.display = 'block';
+      const entry = document.createElement('div');
+      entry.className = 'log-entry ' + cls;
+      entry.textContent = text;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function processQueue() {
+      if (running || queue.length === 0) { return; }
+      running = true;
+      const id = queue.shift();
+      downloadOne(id);
+    }
+
+    function downloadOne(id) {
       const status = document.getElementById('status');
       const bar = document.getElementById('progressBar');
       const fill = document.getElementById('progressFill');
       const pText = document.getElementById('progressText');
-      const log = document.getElementById('log');
 
-      btn.disabled = true;
-      status.className = 'status';
-      status.textContent = '';
       bar.className = 'progress-bar';
       fill.style.width = '0%';
       pText.textContent = '';
-      log.style.display = 'none';
-      log.innerHTML = '';
 
-      if (es) { es.close(); }
+      addLog('info', '─── ' + id + ' ───');
 
-      es = new EventSource('/api/download?id=' + encodeURIComponent(id));
+      const es = new EventSource('/api/download?id=' + encodeURIComponent(id));
 
       es.addEventListener('status', (e) => {
         status.className = 'status info';
@@ -77,12 +105,7 @@
       });
 
       es.addEventListener('log', (e) => {
-        log.style.display = 'block';
-        const entry = document.createElement('div');
-        entry.className = 'log-entry info';
-        entry.textContent = 'ℹ ' + e.data;
-        log.appendChild(entry);
-        log.scrollTop = log.scrollHeight;
+        addLog('info', 'ℹ ' + e.data);
       });
 
       es.addEventListener('progress', (e) => {
@@ -91,37 +114,35 @@
         const pct = Math.round((d.completed / d.total) * 100);
         fill.style.width = pct + '%';
         pText.textContent = d.completed + ' / ' + d.total + ' (' + pct + '%)';
-        log.style.display = 'block';
 
-        const entry = document.createElement('div');
-        entry.className = 'log-entry ' + d.status;
         const label = d.status === 'done' ? '✓' : d.status === 'skipped' ? '⊘' : '✗';
-        entry.textContent = label + ' ' + d.file;
-        log.appendChild(entry);
-        log.scrollTop = log.scrollHeight;
+        addLog(d.status, label + ' ' + d.file);
       });
 
       es.addEventListener('done', (e) => {
         status.className = 'status done';
-        status.textContent = e.data;
-        btn.disabled = false;
+        status.textContent = e.data + (queue.length ? ` (${queue.length} remaining)` : '');
+        addLog('done', '✓ ' + e.data);
         es.close();
-        es = null;
+        running = false;
+        processQueue();
       });
 
       es.addEventListener('error', (e) => {
         if (e.data) {
           status.className = 'status error';
           status.textContent = e.data;
+          addLog('failed', '✗ ' + e.data);
         }
-        btn.disabled = false;
         es.close();
-        es = null;
+        running = false;
+        processQueue();
       });
 
       es.onerror = () => {
-        btn.disabled = false;
-        if (es) { es.close(); es = null; }
+        es.close();
+        running = false;
+        processQueue();
       };
     }
 

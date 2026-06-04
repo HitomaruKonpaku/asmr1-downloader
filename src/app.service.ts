@@ -20,17 +20,34 @@ interface FileEntry {
 }
 
 const API_BASE = process.env.API_BASE || 'https://api.asmr-200.com/api/tracks';
-const DOWNLOAD_PARALLEL = Number(process.env.DOWNLOAD_PARALLEL) || 2;
 const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || join(process.cwd(), 'download');
+const DOWNLOAD_PARALLEL = Number(process.env.DOWNLOAD_PARALLEL) || 2;
 
 @Injectable()
 export class AppService {
+  private readonly limiter = new Bottleneck({ maxConcurrent: DOWNLOAD_PARALLEL });
+  private readonly activeIds = new Set<string>();
+
   download(workId: string): Observable<MessageEvent> {
     return new Observable((subscriber: Subscriber<MessageEvent>) => {
-      this.run(workId, subscriber).catch((err) => {
-        this.emit(subscriber, 'error', err.message || 'Unknown error');
+      const numericId: string = workId.replace(/^RJ/i, '');
+      const normalizedId: string = `RJ${numericId}`;
+
+      if (this.activeIds.has(normalizedId)) {
+        this.emit(subscriber, 'error', `${normalizedId} is already in progress`);
         subscriber.complete();
-      });
+        return;
+      }
+
+      this.activeIds.add(normalizedId);
+      this.run(workId, subscriber)
+        .catch((err) => {
+          this.emit(subscriber, 'error', err.message || 'Unknown error');
+          subscriber.complete();
+        })
+        .finally(() => {
+          this.activeIds.delete(normalizedId);
+        });
     });
   }
 
@@ -127,10 +144,9 @@ export class AppService {
       }
     };
 
-    // Download with concurrency limiter
-    const limiter = new Bottleneck({ maxConcurrent: DOWNLOAD_PARALLEL });
+    // Download with shared concurrency limiter
     await Promise.all(
-      files.map((entry) => limiter.schedule(() => downloadOne(entry))),
+      files.map((entry) => this.limiter.schedule(() => downloadOne(entry))),
     );
 
     this.emit(subscriber, 'done', `Downloaded ${total} files to ${workId}/`);

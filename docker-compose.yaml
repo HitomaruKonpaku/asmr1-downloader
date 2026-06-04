@@ -1,0 +1,10 @@
+---
+services:
+  asmr1-downloader:
+    container_name: asmr1-downloader
+    image: asmr1-downloader
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    volumes:
+      - ./download:/download

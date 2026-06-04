@@ -1,0 +1,6 @@
+{
+  "compilerOptions": {
+    "assets": ["public/**"],
+    "watchAssets": true
+  }
+}

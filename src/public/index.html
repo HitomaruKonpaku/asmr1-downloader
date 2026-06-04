@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASMR Downloader</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, sans-serif; background: #0f0f0f; color: #e0e0e0; display: flex; justify-content: center; padding: 40px 16px; }
+    .container { max-width: 640px; width: 100%; }
+    h1 { font-size: 1.4rem; margin-bottom: 20px; color: #fff; }
+    .form-row { display: flex; gap: 8px; margin-bottom: 20px; }
+    input { flex: 1; padding: 10px 14px; border-radius: 6px; border: 1px solid #333; background: #1a1a1a; color: #e0e0e0; font-size: 14px; outline: none; }
+    input:focus { border-color: #5c6bc0; }
+    button { padding: 10px 20px; border-radius: 6px; border: none; background: #5c6bc0; color: #fff; font-size: 14px; cursor: pointer; white-space: nowrap; }
+    button:hover { background: #7986cb; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; display: none; }
+    .status.info { display: block; background: #1a237e; border: 1px solid #283593; }
+    .status.error { display: block; background: #4a0000; border: 1px solid #b71c1c; color: #ff8a80; }
+    .status.done { display: block; background: #1b5e20; border: 1px solid #2e7d32; color: #a5d6a7; }
+    .progress-bar { height: 6px; background: #222; border-radius: 3px; margin-bottom: 8px; overflow: hidden; display: none; }
+    .progress-bar.active { display: block; }
+    .progress-fill { height: 100%; background: #5c6bc0; width: 0%; transition: width 0.3s; border-radius: 3px; }
+    .progress-text { font-size: 12px; color: #888; margin-bottom: 12px; }
+    .log { max-height: 400px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 12px; background: #111; border: 1px solid #222; border-radius: 6px; padding: 10px; }
+    .log-entry { padding: 2px 0; }
+    .log-entry.info { color: #90caf9; }
+    .log-entry.done { color: #81c784; }
+    .log-entry.skipped { color: #ffb74d; }
+    .log-entry.failed { color: #e57373; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ASMR Downloader</h1>
+    <div class="form-row">
+      <input type="text" id="workId" placeholder="Work ID (e.g. RJ01420480 or 01420480)" />
+      <button id="btn" onclick="startDownload()">Download</button>
+    </div>
+    <div id="status" class="status"></div>
+    <div id="progressBar" class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+    <div id="progressText" class="progress-text"></div>
+    <div id="log" class="log" style="display:none"></div>
+  </div>
+
+  <script>
+    let es = null;
+
+    function startDownload() {
+      const id = document.getElementById('workId').value.trim();
+      if (!id) { return; }
+
+      const btn = document.getElementById('btn');
+      const status = document.getElementById('status');
+      const bar = document.getElementById('progressBar');
+      const fill = document.getElementById('progressFill');
+      const pText = document.getElementById('progressText');
+      const log = document.getElementById('log');
+
+      btn.disabled = true;
+      status.className = 'status';
+      status.textContent = '';
+      bar.className = 'progress-bar';
+      fill.style.width = '0%';
+      pText.textContent = '';
+      log.style.display = 'none';
+      log.innerHTML = '';
+
+      if (es) { es.close(); }
+
+      es = new EventSource('/api/download?id=' + encodeURIComponent(id));
+
+      es.addEventListener('status', (e) => {
+        status.className = 'status info';
+        status.textContent = e.data;
+      });
+
+      es.addEventListener('log', (e) => {
+        log.style.display = 'block';
+        const entry = document.createElement('div');
+        entry.className = 'log-entry info';
+        entry.textContent = 'ℹ ' + e.data;
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+      });
+
+      es.addEventListener('progress', (e) => {
+        const d = JSON.parse(e.data);
+        bar.className = 'progress-bar active';
+        const pct = Math.round((d.completed / d.total) * 100);
+        fill.style.width = pct + '%';
+        pText.textContent = d.completed + ' / ' + d.total + ' (' + pct + '%)';
+        log.style.display = 'block';
+
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + d.status;
+        const label = d.status === 'done' ? '✓' : d.status === 'skipped' ? '⊘' : '✗';
+        entry.textContent = label + ' ' + d.file;
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+      });
+
+      es.addEventListener('done', (e) => {
+        status.className = 'status done';
+        status.textContent = e.data;
+        btn.disabled = false;
+        es.close();
+        es = null;
+      });
+
+      es.addEventListener('error', (e) => {
+        if (e.data) {
+          status.className = 'status error';
+          status.textContent = e.data;
+        }
+        btn.disabled = false;
+        es.close();
+        es = null;
+      });
+
+      es.onerror = () => {
+        btn.disabled = false;
+        if (es) { es.close(); es = null; }
+      };
+    }
+
+    document.getElementById('workId').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { startDownload(); }
+    });
+  </script>
+</body>
+</html>

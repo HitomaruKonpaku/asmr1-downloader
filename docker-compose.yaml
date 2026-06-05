@@ -8,5 +8,6 @@ services:
       - 3000:3000
     environment:
       DOWNLOAD_PARALLEL: 2
+      DOWNLOAD_TIMEOUT: 120000
     volumes:
       - ./download:/download

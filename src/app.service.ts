@@ -22,6 +22,7 @@ interface FileEntry {
 const API_BASE = process.env.API_BASE || 'https://api.asmr-200.com/api/tracks';
 const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || join(process.cwd(), 'download');
 const DOWNLOAD_PARALLEL = Number(process.env.DOWNLOAD_PARALLEL) || 2;
+const DOWNLOAD_TIMEOUT = Number(process.env.DOWNLOAD_TIMEOUT) || 120_000;
 
 @Injectable()
 export class AppService {
@@ -111,7 +112,7 @@ export class AppService {
       }
 
       try {
-        const resp = await fetch(entry.url);
+        const resp = await fetch(entry.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT) });
         if (!resp.ok || !resp.body) {
           throw new Error(`HTTP ${resp.status}`);
         }

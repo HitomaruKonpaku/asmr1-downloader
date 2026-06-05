@@ -24,6 +24,8 @@
     .progress-fill { height: 100%; background: #5c6bc0; width: 0%; transition: width 0.3s; border-radius: 3px; }
     .progress-text { font-size: 12px; color: #888; margin-bottom: 12px; }
     .log { max-height: 400px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 12px; background: #111; border: 1px solid #222; border-radius: 6px; padding: 10px; }
+    .error-log { margin-top: 12px; border-color: #b71c1c; background: #1a0000; max-height: 200px; }
+    .error-log-title { color: #e57373; font-weight: bold; margin-bottom: 4px; }
     .log-entry { padding: 2px 0; }
     .log-entry.info { color: #90caf9; }
     .log-entry.done { color: #81c784; }
@@ -42,6 +44,7 @@
     <div id="progressBar" class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
     <div id="progressText" class="progress-text"></div>
     <div id="log" class="log" style="display:none"></div>
+    <div id="errorLog" class="log error-log" style="display:none"></div>
   </div>
 
   <script>
@@ -76,6 +79,22 @@
       entry.textContent = text;
       log.appendChild(entry);
       log.scrollTop = log.scrollHeight;
+    }
+
+    function addErrorEntry(workId, file, error) {
+      const el = document.getElementById('errorLog');
+      if (el.style.display === 'none') {
+        el.style.display = 'block';
+        const title = document.createElement('div');
+        title.className = 'error-log-title';
+        title.textContent = '⚠ Failed Downloads';
+        el.appendChild(title);
+      }
+      const entry = document.createElement('div');
+      entry.className = 'log-entry failed';
+      entry.textContent = `[${workId}] ${file} — ${error}`;
+      el.appendChild(entry);
+      el.scrollTop = el.scrollHeight;
     }
 
     function processQueue() {
@@ -117,6 +136,10 @@
 
         const label = d.status === 'done' ? '✓' : d.status === 'skipped' ? '⊘' : '✗';
         addLog(d.status, label + ' ' + d.file);
+
+        if (d.status === 'failed') {
+          addErrorEntry(id, d.file, d.error || 'Unknown error');
+        }
       });
 
       es.addEventListener('done', (e) => {

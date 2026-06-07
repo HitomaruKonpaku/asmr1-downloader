@@ -60,7 +60,10 @@
       const raw = document.getElementById('workId').value.trim();
       if (!raw) { return; }
 
-      const ids = raw.split(',').map(s => s.trim()).filter(Boolean);
+      const ids = raw
+        .split(',')
+        .map(s => s.replace('https://www.asmr.one/work/', '').trim())
+        .filter(Boolean);
       if (!ids.length) { return; }
 
       document.getElementById('workId').value = '';

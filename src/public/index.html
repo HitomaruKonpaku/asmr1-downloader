@@ -51,6 +51,11 @@
     const queue = [];
     let running = false;
 
+    function parseId(raw) {
+      const id = /(?:RJ){0,1}\d+$/i.exec(raw)?.[0];
+      return id ?? '';
+    }
+
     function normalizeId(raw) {
       const num = raw.replace(/^RJ/i, '');
       return 'RJ' + num;
@@ -62,7 +67,7 @@
 
       const ids = raw
         .split(',')
-        .map(s => s.replace('https://www.asmr.one/work/', '').trim())
+        .map(s => parseId(s).trim())
         .filter(Boolean);
       if (!ids.length) { return; }
 

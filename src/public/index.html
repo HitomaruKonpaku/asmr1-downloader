@@ -26,6 +26,11 @@
     .log { max-height: 400px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 12px; background: #111; border: 1px solid #222; border-radius: 6px; padding: 10px; }
     .error-log { margin-top: 12px; border-color: #b71c1c; background: #1a0000; max-height: 200px; }
     .error-log-title { color: #e57373; font-weight: bold; margin-bottom: 4px; }
+    .error-group { border-top: 1px solid #4a1f1f; margin-top: 8px; padding-top: 8px; }
+    .error-group-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .error-group-title { color: #ff8a80; font-weight: bold; }
+    .retry-btn { padding: 2px 8px; border-radius: 4px; border: 1px solid #b71c1c; background: transparent; color: #ff8a80; font-size: 11px; cursor: pointer; }
+    .retry-btn:hover { background: #3b0d0d; }
     .log-entry { padding: 2px 0; }
     .log-entry.info { color: #90caf9; }
     .log-entry.done { color: #81c784; }
@@ -49,6 +54,7 @@
 
   <script>
     const queue = [];
+    const errorGroups = new Map();
     let running = false;
 
     function parseId(raw) {
@@ -91,6 +97,8 @@
 
     function addErrorEntry(workId, file, error) {
       const el = document.getElementById('errorLog');
+      const normalizedId = normalizeId(workId);
+
       if (el.style.display === 'none') {
         el.style.display = 'block';
         const title = document.createElement('div');
@@ -98,10 +106,44 @@
         title.textContent = '⚠ Failed Downloads';
         el.appendChild(title);
       }
+
+      let group = errorGroups.get(normalizedId);
+      if (!group) {
+        const groupEl = document.createElement('div');
+        groupEl.className = 'error-group';
+
+        const header = document.createElement('div');
+        header.className = 'error-group-header';
+
+        const groupTitle = document.createElement('div');
+        groupTitle.className = 'error-group-title';
+        groupTitle.textContent = normalizedId;
+
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'retry-btn';
+        retryBtn.textContent = 'Retry';
+        retryBtn.addEventListener('click', () => {
+          queue.push(normalizedId);
+          addLog('info', `Queued retry: ${normalizedId} (${queue.length} in queue)`);
+          processQueue();
+        });
+
+        const list = document.createElement('div');
+
+        header.appendChild(groupTitle);
+        header.appendChild(retryBtn);
+        groupEl.appendChild(header);
+        groupEl.appendChild(list);
+        el.appendChild(groupEl);
+
+        group = { list };
+        errorGroups.set(normalizedId, group);
+      }
+
       const entry = document.createElement('div');
       entry.className = 'log-entry failed';
-      entry.textContent = `[${workId}] ${file} — ${error}`;
-      el.appendChild(entry);
+      entry.textContent = `${file} — ${error}`;
+      group.list.appendChild(entry);
       el.scrollTop = el.scrollHeight;
     }
 
@@ -117,6 +159,7 @@
       const bar = document.getElementById('progressBar');
       const fill = document.getElementById('progressFill');
       const pText = document.getElementById('progressText');
+      let closedByApp = false;
 
       bar.className = 'progress-bar';
       fill.style.width = '0%';
@@ -154,23 +197,36 @@
         status.className = 'status done';
         status.textContent = e.data + (queue.length ? ` (${queue.length} remaining)` : '');
         addLog('done', '✓ ' + e.data);
+        closedByApp = true;
         es.close();
         running = false;
         processQueue();
       });
 
       es.addEventListener('error', (e) => {
-        if (e.data) {
+        const message = e.data || 'Request error';
+        if (message) {
           status.className = 'status error';
-          status.textContent = e.data;
-          addLog('failed', '✗ ' + e.data);
+          status.textContent = message;
+          addLog('failed', '✗ ' + message);
+          addErrorEntry(id, '(request)', message);
         }
+        closedByApp = true;
         es.close();
         running = false;
         processQueue();
       });
 
       es.onerror = () => {
+        if (closedByApp) {
+          return;
+        }
+        const message = 'Connection error';
+        status.className = 'status error';
+        status.textContent = message;
+        addLog('failed', '✗ ' + message);
+        addErrorEntry(id, '(request)', message);
+        closedByApp = true;
         es.close();
         running = false;
         processQueue();

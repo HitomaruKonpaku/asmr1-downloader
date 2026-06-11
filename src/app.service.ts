@@ -35,18 +35,22 @@ export class AppService {
       const normalizedId: string = `RJ${numericId}`;
 
       if (this.activeIds.has(normalizedId)) {
+        this.log(normalizedId, 'rejected: already in progress');
         this.emit(subscriber, 'error', `${normalizedId} is already in progress`);
         subscriber.complete();
         return;
       }
 
+      this.log(normalizedId, 'queued');
       this.activeIds.add(normalizedId);
       this.run(workId, subscriber)
         .catch((err) => {
+          this.log(normalizedId, `failed: ${err.message || 'Unknown error'}`);
           this.emit(subscriber, 'error', err.message || 'Unknown error');
           subscriber.complete();
         })
         .finally(() => {
+          this.log(normalizedId, 'finished');
           this.activeIds.delete(normalizedId);
         });
     });
@@ -59,14 +63,17 @@ export class AppService {
     const numericId: string = rawId.replace(/^RJ/i, '');
     const workId: string = `RJ${numericId}`;
 
+    this.log(workId, 'fetching metadata');
     this.emit(subscriber, 'log', `Fetching data for ${workId}...`);
 
     let json: any;
     try {
       const res = await fetch(`${API_BASE}/${numericId}?v=2`);
       json = await res.json();
+      this.log(workId, `metadata fetched: HTTP ${res.status}`);
       this.emit(subscriber, 'log', `API fetch success (HTTP ${res.status})`);
     } catch (err: any) {
+      this.log(workId, `metadata fetch failed: ${err.message}`);
       this.emit(subscriber, 'error', `API fetch failed: ${err.message}`);
       subscriber.complete();
       return;
@@ -83,6 +90,7 @@ export class AppService {
     this.flattenTree(json, '', files);
 
     this.emit(subscriber, 'log', `Found ${files.length} files. Starting download...`);
+    this.log(workId, `starting download of ${files.length} files`);
 
     const destDir: string = join(DOWNLOAD_DIR, workId);
     let completed: number = 0;
@@ -96,6 +104,7 @@ export class AppService {
       if (existsSync(dest)) {
         const localSize: number = statSync(dest).size;
         if (entry.size === undefined || localSize === entry.size) {
+          this.log(workId, `skipped: ${entry.path}`);
           completed++;
           this.emit(
             subscriber,
@@ -130,6 +139,7 @@ export class AppService {
           }),
         );
       } catch (err: any) {
+        this.log(workId, `file failed: ${entry.path} - ${err.message}`);
         completed++;
         this.emit(
           subscriber,
@@ -150,6 +160,7 @@ export class AppService {
       files.map((entry) => this.limiter.schedule(() => downloadOne(entry))),
     );
 
+    this.log(workId, `completed: ${total} files processed`);
     this.emit(subscriber, 'done', `Downloaded ${total} files to ${workId}/`);
     subscriber.complete();
   }
@@ -178,5 +189,9 @@ export class AppService {
     data: string,
   ): void {
     subscriber.next({ type, data } as MessageEvent);
+  }
+
+  private log(workId: string, message: string): void {
+    console.log(`[ASMR] [${workId}] ${message}`);
   }
 }
